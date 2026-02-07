@@ -17,8 +17,8 @@ CONFIG_FILE="/etc/wireguard/surfshark.conf"
 echo -e "${BLUE}"
 cat << "EOF"
 ╔═══════════════════════════════════════════════╗
-║  Surfshark WireGuard Manager Installer        ║
-║  Easy VPS VPN Management                      ║
+║  Surfshark WireGuard Manager Installer       ║
+║  Easy VPS VPN Management                     ║
 ╚═══════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
@@ -29,16 +29,114 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Detect OS
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$ID
+    VERSION=$VERSION_ID
+else
+    echo -e "${RED}Cannot detect OS. This script supports Ubuntu/Debian.${NC}"
+    exit 1
+fi
+
+echo -e "${YELLOW}Detected OS: $OS $VERSION${NC}"
 echo -e "${YELLOW}Starting installation...${NC}\n"
 
-# Step 1: Install WireGuard
+# Step 1: Install WireGuard with multiple methods
 echo -e "${YELLOW}[1/4] Installing WireGuard...${NC}"
-apt update -qq
-apt install -y wireguard iptables resolvconf curl > /dev/null 2>&1
+
+install_wireguard() {
+    case $OS in
+        ubuntu|debian)
+            echo -e "${YELLOW}Installing for Ubuntu/Debian...${NC}"
+            
+            # Update package list
+            apt update
+            
+            # Method 1: Try standard repo first
+            echo -e "${YELLOW}Trying standard repository...${NC}"
+            apt install -y wireguard wireguard-tools iptables resolvconf curl
+            
+            if [ $? -eq 0 ] && command -v wg &> /dev/null; then
+                echo -e "${GREEN}✓ WireGuard installed successfully${NC}"
+                return 0
+            fi
+            
+            # Method 2: Try with backports for older Debian
+            if [ "$OS" = "debian" ]; then
+                echo -e "${YELLOW}Trying Debian backports...${NC}"
+                echo "deb http://deb.debian.org/debian $(lsb_release -sc)-backports main" > /etc/apt/sources.list.d/backports.list
+                apt update
+                apt install -y -t $(lsb_release -sc)-backports wireguard wireguard-tools
+            fi
+            
+            if [ $? -eq 0 ] && command -v wg &> /dev/null; then
+                echo -e "${GREEN}✓ WireGuard installed successfully${NC}"
+                return 0
+            fi
+            
+            # Method 3: Try PPA for Ubuntu
+            if [ "$OS" = "ubuntu" ]; then
+                echo -e "${YELLOW}Trying WireGuard PPA...${NC}"
+                apt install -y software-properties-common
+                add-apt-repository -y ppa:wireguard/wireguard
+                apt update
+                apt install -y wireguard wireguard-tools
+            fi
+            
+            if command -v wg &> /dev/null; then
+                echo -e "${GREEN}✓ WireGuard installed successfully${NC}"
+                return 0
+            else
+                echo -e "${RED}✗ Failed to install WireGuard${NC}"
+                return 1
+            fi
+            ;;
+        centos|rhel|fedora)
+            echo -e "${YELLOW}Installing for CentOS/RHEL/Fedora...${NC}"
+            yum install -y epel-release
+            yum install -y wireguard-tools iptables curl
+            
+            if command -v wg &> /dev/null; then
+                echo -e "${GREEN}✓ WireGuard installed successfully${NC}"
+                return 0
+            else
+                echo -e "${RED}✗ Failed to install WireGuard${NC}"
+                return 1
+            fi
+            ;;
+        *)
+            echo -e "${RED}Unsupported OS: $OS${NC}"
+            return 1
+            ;;
+    esac
+}
+
+# Run installation
+install_wireguard
+
+if ! command -v wg &> /dev/null; then
+    echo -e "${RED}╔═══════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║  WireGuard Installation Failed!               ║${NC}"
+    echo -e "${RED}╚═══════════════════════════════════════════════╝${NC}\n"
+    
+    echo -e "${YELLOW}Troubleshooting steps:${NC}"
+    echo -e "1. Check your internet connection"
+    echo -e "2. Try manually: ${GREEN}sudo apt update && sudo apt install wireguard${NC}"
+    echo -e "3. Check kernel version: ${GREEN}uname -r${NC}"
+    echo -e "4. Your kernel might not support WireGuard"
+    echo ""
+    echo -e "${YELLOW}For more help, visit: https://www.wireguard.com/install/${NC}"
+    exit 1
+fi
+
+# Verify installation
+echo -e "${YELLOW}Verifying WireGuard installation...${NC}"
+wg version
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ WireGuard installed${NC}"
+    echo -e "${GREEN}✓ WireGuard is working properly${NC}\n"
 else
-    echo -e "${RED}✗ Failed to install WireGuard${NC}"
+    echo -e "${RED}✗ WireGuard installed but not working properly${NC}"
     exit 1
 fi
 
@@ -72,6 +170,12 @@ create_config() {
     # Get the main network interface
     MAIN_INTERFACE=$(ip route | grep default | awk '{print $5}' | head -n1)
     
+    if [ -z "$MAIN_INTERFACE" ]; then
+        echo -e "${RED}Could not detect network interface${NC}"
+        MAIN_INTERFACE="eth0"
+        echo -e "${YELLOW}Using default: $MAIN_INTERFACE${NC}"
+    fi
+    
     cat > $CONFIG_FILE << 'EOF'
 [Interface]
 Address = 10.14.0.2/32
@@ -96,7 +200,8 @@ EOF
     sysctl -p > /dev/null 2>&1
     
     chmod 600 $CONFIG_FILE
-    echo -e "${GREEN}✓ Configuration created${NC}"
+    echo -e "${GREEN}✓ Configuration created at $CONFIG_FILE${NC}"
+    echo -e "${GREEN}✓ Using network interface: $MAIN_INTERFACE${NC}"
 }
 
 # Function to start WireGuard
@@ -117,7 +222,8 @@ start_wireguard() {
             sleep 1
             show_status
         else
-            echo -e "${RED}✗ Failed to start${NC}"
+            echo -e "${RED}✗ Failed to start VPN${NC}"
+            echo -e "${YELLOW}Check logs with: journalctl -u wg-quick@surfshark -n 20${NC}"
         fi
     fi
 }
@@ -152,7 +258,7 @@ show_status() {
         wg show $INTERFACE
         echo ""
         echo -e "${YELLOW}Current Public IP:${NC}"
-        CURRENT_IP=$(timeout 5 curl -s ifconfig.me 2>/dev/null || echo "Unable to fetch")
+        CURRENT_IP=$(timeout 5 curl -s ifconfig.me 2>/dev/null || timeout 5 curl -s ipinfo.io/ip 2>/dev/null || echo "Unable to fetch")
         echo -e "${GREEN}$CURRENT_IP${NC}"
     else
         echo -e "${RED}Status: ○ INACTIVE${NC}"
@@ -176,7 +282,7 @@ disable_autostart() {
 # Function to check IP
 check_ip() {
     echo -e "${YELLOW}Checking IP address...${NC}\n"
-    CURRENT_IP=$(timeout 5 curl -s ifconfig.me 2>/dev/null || echo "Unable to fetch IP")
+    CURRENT_IP=$(timeout 5 curl -s ifconfig.me 2>/dev/null || timeout 5 curl -s ipinfo.io/ip 2>/dev/null || echo "Unable to fetch IP")
     echo -e "${GREEN}Current IP: $CURRENT_IP${NC}"
     
     if wg show $INTERFACE > /dev/null 2>&1; then
@@ -216,7 +322,7 @@ uninstall() {
     
     read -p "Remove WireGuard package too? (yes/no): " remove_wg
     if [ "$remove_wg" = "yes" ]; then
-        apt remove -y wireguard
+        apt remove -y wireguard wireguard-tools 2>/dev/null
         apt autoremove -y
         echo -e "${GREEN}✓ WireGuard removed${NC}"
     fi
@@ -349,18 +455,15 @@ echo -e "${GREEN}╚════════════════════
 
 echo -e "${BLUE}You can now use either command:${NC}\n"
 
-echo -e "${YELLOW}Full command:${NC}"
-echo -e "  ${GREEN}sudo surfshark${NC}          - Open menu"
-echo -e "  ${GREEN}sudo surfshark start${NC}    - Start VPN"
-echo -e "  ${GREEN}sudo surfshark stop${NC}     - Stop VPN"
-echo -e "  ${GREEN}sudo surfshark status${NC}   - Check status"
-echo -e "  ${GREEN}sudo surfshark uninstall${NC} - Uninstall"
-
-echo -e "\n${YELLOW}Short command (same features):${NC}"
+echo -e "${YELLOW}Short command (Quick & Easy):${NC}"
 echo -e "  ${GREEN}sudo sfw${NC}                - Open menu"
 echo -e "  ${GREEN}sudo sfw start${NC}          - Start VPN"
 echo -e "  ${GREEN}sudo sfw stop${NC}           - Stop VPN"
 echo -e "  ${GREEN}sudo sfw status${NC}         - Check status"
 echo -e "  ${GREEN}sudo sfw uninstall${NC}      - Uninstall"
+
+echo -e "\n${YELLOW}Full command (same features):${NC}"
+echo -e "  ${GREEN}sudo surfshark${NC}          - Open menu"
+echo -e "  ${GREEN}sudo surfshark start${NC}    - Start VPN"
 
 echo -e "\n${BLUE}Quick access: Just type '${GREEN}sudo sfw${BLUE}' anytime!${NC}\n"

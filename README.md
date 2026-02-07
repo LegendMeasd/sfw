@@ -4,12 +4,12 @@ Easy-to-use WireGuard VPN manager for routing all VPS traffic through Surfshark.
 
 ## ⚡ One-Line Installation
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/YOUR-USERNAME/surfshark-wireguard-manager/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/LegendMeasd/surfshark-wireguard-manager/main/install.sh)
 ```
 
 Or using wget:
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/YOUR-USERNAME/surfshark-wireguard-manager/main/install.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/LegendMeasd/surfshark-wireguard-manager/main/install.sh)
 ```
 
 ## 📖 Quick Usage
@@ -215,3 +215,4 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+

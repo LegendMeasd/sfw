@@ -17,8 +17,8 @@ CONFIG_FILE="/etc/wireguard/surfshark.conf"
 echo -e "${BLUE}"
 cat << "EOF"
 ╔═══════════════════════════════════════════════╗
-║  Surfshark WireGuard Manager Installer       ║
-║  Easy VPS VPN Management                     ║
+║  Surfshark WireGuard Manager Installer        ║
+║  Easy VPS VPN Management                      ║
 ╚═══════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
